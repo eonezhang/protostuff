@@ -96,6 +96,21 @@ public final class RuntimeSchema<T> implements Schema<T>, FieldMap<T>
         throw new RuntimeException(
                 "RuntimeSchema.register is only supported on DefaultIdStrategy");
     }
+    
+    /**
+     * Returns true if this there is no existing one or the same schema has already been registered (this must be done
+     * on application startup).
+     * <p>
+     * NOTE: This is only supported when {@link RuntimeEnv#ID_STRATEGY} is {@link DefaultIdStrategy}.
+     */
+    public static <T> boolean register(Class<T> typeClass)
+    {
+        if (ID_STRATEGY instanceof DefaultIdStrategy)
+            return ((DefaultIdStrategy) ID_STRATEGY).registerPojo(typeClass);
+
+        throw new RuntimeException(
+                "RuntimeSchema.register is only supported on DefaultIdStrategy");
+    }
 
     /**
      * Returns true if the {@code typeClass} was not lazily created.
@@ -223,10 +238,10 @@ public final class RuntimeSchema<T> implements Schema<T>, FieldMap<T>
                     // definition order
                     if (annotated)
                     {
-                        throw new RuntimeException(
-                                "When using annotation-based mapping, "
-                                        + "all fields must be annotated with @"
-                                        + Tag.class.getSimpleName());
+                        String className = typeClass.getCanonicalName();
+                        String fieldName = f.getName();
+                        String message = String.format("%s#%s is not annotated with @Tag", className, fieldName);
+                        throw new RuntimeException(message);
                     }
                     fieldMapping = ++i;
 

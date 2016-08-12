@@ -1,12 +1,5 @@
 package io.protostuff.runtime;
 
-import java.io.IOException;
-import java.lang.reflect.Array;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Map.Entry;
-
 import io.protostuff.CollectionSchema;
 import io.protostuff.GraphInput;
 import io.protostuff.Input;
@@ -17,6 +10,15 @@ import io.protostuff.Output;
 import io.protostuff.Pipe;
 import io.protostuff.ProtostuffException;
 import io.protostuff.Schema;
+
+import java.io.IOException;
+import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Map.Entry;
 
 /**
  * This base class handles all the IO for reading and writing polymorphic fields. When a field's type is
@@ -32,11 +34,58 @@ import io.protostuff.Schema;
  */
 public abstract class IdStrategy
 {
-
+    
+    public static final int 
+            ENUMS_BY_NAME = 1,
+            AUTO_LOAD_POLYMORPHIC_CLASSES = 1 << 1,
+            ALLOW_NULL_ARRAY_ELEMENT = 1 << 2,
+            MORPH_NON_FINAL_POJOS = 1 << 3,
+            MORPH_COLLECTION_INTERFACES = 1 << 4,
+            MORPH_MAP_INTERFACES = 1 << 5,
+            COLLECTION_SCHEMA_ON_REPEATED_FIELDS = 1 << 6,
+            POJO_SCHEMA_ON_COLLECTION_FIELDS = 1 << 7,
+            POJO_SCHEMA_ON_MAP_FIELDS = 1 << 8,
+            DEFAULT_FLAGS;
+    
+    static
+    {
+        int flags = 0;
+        
+        if (RuntimeEnv.ENUMS_BY_NAME)
+            flags |= ENUMS_BY_NAME;
+        
+        if (RuntimeEnv.AUTO_LOAD_POLYMORPHIC_CLASSES)
+            flags |= AUTO_LOAD_POLYMORPHIC_CLASSES;
+        
+        if (RuntimeEnv.ALLOW_NULL_ARRAY_ELEMENT)
+            flags |= ALLOW_NULL_ARRAY_ELEMENT;
+        
+        if (RuntimeEnv.MORPH_NON_FINAL_POJOS)
+            flags |= MORPH_NON_FINAL_POJOS;
+        
+        if (RuntimeEnv.MORPH_COLLECTION_INTERFACES)
+            flags |= MORPH_COLLECTION_INTERFACES;
+        
+        if (RuntimeEnv.MORPH_MAP_INTERFACES)
+            flags |= MORPH_MAP_INTERFACES;
+        
+        if (RuntimeEnv.COLLECTION_SCHEMA_ON_REPEATED_FIELDS)
+            flags |= COLLECTION_SCHEMA_ON_REPEATED_FIELDS;
+        
+        if (RuntimeEnv.POJO_SCHEMA_ON_COLLECTION_FIELDS)
+            flags |= POJO_SCHEMA_ON_COLLECTION_FIELDS;
+        
+        if (RuntimeEnv.POJO_SCHEMA_ON_MAP_FIELDS)
+            flags |= POJO_SCHEMA_ON_MAP_FIELDS;
+        
+        DEFAULT_FLAGS = flags;
+    }
+    
+    public final int flags;
     public final IdStrategy primaryGroup;
     public final int groupId;
-
-    protected IdStrategy(IdStrategy primaryGroup, int groupId)
+    
+    protected IdStrategy(int flags, IdStrategy primaryGroup, int groupId)
     {
         if (primaryGroup != null)
         {
@@ -52,75 +101,71 @@ public abstract class IdStrategy
                     + "(standalone) must have a groupId of zero.");
         }
 
+        this.flags = flags;
         this.primaryGroup = primaryGroup;
         this.groupId = groupId;
     }
-
+    
     /**
      * Generates a schema from the given class. If this strategy is part of a group, the existing fields of that group's
      * schema will be re-used.
      */
     protected <T> Schema<T> newSchema(Class<T> typeClass)
     {
-        // check if this is part of a group
-        if (primaryGroup != null)
-        {
-            // only pojos created by runtime schema support groups
-            final Schema<T> s = primaryGroup.getSchemaWrapper(typeClass, true)
-                    .getSchema();
-            if (s instanceof RuntimeSchema)
-            {
-                final RuntimeSchema<T> rs = (RuntimeSchema<T>) s;
-
-                final ArrayList<Field<T>> fields = new ArrayList<>(rs.getFieldCount());
-
-                for (Field<T> f : rs.getFields())
-                {
-                    final int groupFilter = f.groupFilter;
-                    if (groupFilter != 0)
-                    {
-                        final int set; // set for exclusion
-                        if (groupFilter > 0)
-                        {
-                            // inclusion
-                            set = ~groupFilter & 0x7FFFFFFF;
-                        }
-                        else
-                        {
-                            // exclusion
-                            set = -groupFilter;
-                        }
-
-                        if (0 != (groupId & set))
-                        {
-                            // this field is excluded on the current group id
-                            continue;
-                        }
-                    }
-
-                    fields.add(f);
-                }
-
-                final int size = fields.size();
-                if (size == rs.getFieldCount())
-                {
-                    // nothing is excluded
-                    return rs;
-                }
-
-                if (size == 0)
-                {
-                    throw new RuntimeException("All fields were excluded for "
-                            + rs.messageFullName() + " on group " + groupId);
-                }
-
-                return new RuntimeSchema<>(typeClass, fields, rs.instantiator);
-            }
-
+        if (primaryGroup == null)
+            return RuntimeSchema.createFrom(typeClass, this);
+        
+        final Schema<T> s = primaryGroup.getSchemaWrapper(typeClass, true).getSchema();
+        
+        // only pojos created by runtime schema support groups
+        if (!(s instanceof RuntimeSchema))
             return s;
-        }
+        
+        final RuntimeSchema<T> rs = (RuntimeSchema<T>) s;
+        
+        // check if we need to filter
+        if (rs.getFieldCount() == 0)
+            return rs;
+        
+        final ArrayList<Field<T>> fields = new ArrayList<>(rs.getFieldCount());
+        
+        for (Field<T> f : rs.getFields())
+        {
+            final int groupFilter = f.groupFilter;
+            if (groupFilter != 0)
+            {
+                final int set; // set for exclusion
+                if (groupFilter > 0)
+                {
+                    // inclusion
+                    set = ~groupFilter & 0x7FFFFFFF;
+                }
+                else
+                {
+                    // exclusion
+                    set = -groupFilter;
+                }
 
-        return RuntimeSchema.createFrom(typeClass, this);
+                if (0 != (groupId & set))
+                {
+                    // this field is excluded on the current group id
+                    continue;
+                }
+            }
+            
+            fields.add(f);
+        }
+        
+        // The behavior has been changed to always allow messages with zero fields
+        // regardless if it has a primary group or not.
+        /*if (fields.size() == 0)
+        {
+            throw new RuntimeException("All fields were excluded for "
+                    + rs.messageFullName() + " on group " + groupId);
+        }*/
+        
+        return fields.size() == rs.getFieldCount() ? rs : 
+                new RuntimeSchema<>(typeClass, fields, rs.instantiator);
     }
 
     /**
@@ -234,6 +279,9 @@ public abstract class IdStrategy
             throws IOException;
 
     // pojo
+    
+    protected abstract <T> HasSchema<T> tryWritePojoIdTo(Output output,
+            int fieldNumber, Class<T> clazz, boolean registered) throws IOException;
 
     protected abstract <T> HasSchema<T> writePojoIdTo(Output output,
             int fieldNumber, Class<T> clazz) throws IOException;
@@ -1246,7 +1294,205 @@ public abstract class IdStrategy
                     IdStrategy.this);
         }
     };
-
+    
+    // array element schema
+    
+    final ArraySchemas.BoolArray ARRAY_BOOL_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.BoolArray(this, null, true);
+    final ArraySchemas.BoolArray ARRAY_BOOL_BOXED_SCHEMA = 
+            new ArraySchemas.BoolArray(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.CharArray ARRAY_CHAR_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.CharArray(this, null, true);
+    final ArraySchemas.CharArray ARRAY_CHAR_BOXED_SCHEMA = 
+            new ArraySchemas.CharArray(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.ShortArray ARRAY_SHORT_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.ShortArray(this, null, true);
+    final ArraySchemas.ShortArray ARRAY_SHORT_BOXED_SCHEMA = 
+            new ArraySchemas.ShortArray(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.Int32Array ARRAY_INT32_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.Int32Array(this, null, true);
+    final ArraySchemas.Int32Array ARRAY_INT32_BOXED_SCHEMA = 
+            new ArraySchemas.Int32Array(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.Int64Array ARRAY_INT64_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.Int64Array(this, null, true);
+    final ArraySchemas.Int64Array ARRAY_INT64_BOXED_SCHEMA = 
+            new ArraySchemas.Int64Array(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.FloatArray ARRAY_FLOAT_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.FloatArray(this, null, true);
+    final ArraySchemas.FloatArray ARRAY_FLOAT_BOXED_SCHEMA = 
+            new ArraySchemas.FloatArray(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.DoubleArray ARRAY_DOUBLE_PRIMITIVE_SCHEMA = 
+            new ArraySchemas.DoubleArray(this, null, true);
+    final ArraySchemas.DoubleArray ARRAY_DOUBLE_BOXED_SCHEMA = 
+            new ArraySchemas.DoubleArray(this, null, false)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.StringArray ARRAY_STRING_SCHEMA = 
+            new ArraySchemas.StringArray(this, null)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.ByteStringArray ARRAY_BYTESTRING_SCHEMA = 
+            new ArraySchemas.ByteStringArray(this, null)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.ByteArrayArray ARRAY_BYTEARRAY_SCHEMA = 
+            new ArraySchemas.ByteArrayArray(this, null)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.BigDecimalArray ARRAY_BIGDECIMAL_SCHEMA = 
+            new ArraySchemas.BigDecimalArray(this, null)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.BigIntegerArray ARRAY_BIGINTEGER_SCHEMA = 
+            new ArraySchemas.BigIntegerArray(this, null)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
+    final ArraySchemas.DateArray ARRAY_DATE_SCHEMA = 
+            new ArraySchemas.DateArray(this, null)
+    {
+        @Override
+        @SuppressWarnings("unchecked")
+        protected void setValue(Object value, Object owner)
+        {
+            if (MapWrapper.class == owner.getClass())
+                ((MapWrapper<Object, Object>) owner).setValue(value);
+            else
+                ((Collection<Object>) owner).add(value);
+        }
+    };
+    
     private static final class PMapWrapper implements Entry<Object, Object>
     {
 
@@ -1283,6 +1529,32 @@ public abstract class IdStrategy
     static final class Wrapper
     {
         Object value;
+    }
+    
+    protected static <T> T createMessageInstance(Class<T> clazz)
+    {
+        try
+        {
+            return clazz.newInstance();
+        }
+        catch (IllegalAccessException e)
+        {
+            try
+            {
+                Constructor<T> constructor = clazz.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                return constructor.newInstance();
+            }
+            catch (NoSuchMethodException | InstantiationException
+                    | InvocationTargetException | IllegalAccessException e1)
+            {
+                throw new RuntimeException(e);
+            }
+        }
+        catch (InstantiationException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
 }

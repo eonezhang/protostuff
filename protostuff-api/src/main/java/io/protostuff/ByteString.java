@@ -99,9 +99,11 @@ public final class ByteString
         output.writeByteArray(fieldNumber, bs.bytes, repeated);
     }
 
+    @Override
     public String toString()
     {
-        return toStringUtf8();
+        return String.format("<ByteString@%s size=%d>",
+                Integer.toHexString(System.identityHashCode(this)), size());
     }
 
     // END EXTRA
@@ -263,7 +265,7 @@ public final class ByteString
      * @ Constructs a new {@code String} by decoding the bytes using the specified charset.
      */
     /*
-     * @public String toString(final String charsetName) throws UnsupportedEncodingException { return new String(bytes,
+     * @public String unsignedIntToString(final String charsetName) throws UnsupportedEncodingException { return new String(bytes,
      * charsetName); }
      */
 

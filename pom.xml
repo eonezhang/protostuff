@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.protostuff</groupId>
   <artifactId>protostuff</artifactId>
-  <version>1.3.6-SNAPSHOT</version>
+  <version>1.4.5-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>protostuff</name>
   <description>
@@ -17,7 +17,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <junit-version>4.11</junit-version>
-    <jackson-version>2.4.4</jackson-version>
+    <jackson-version>2.7.1</jackson-version>
     <woodstox-version>4.1.3</woodstox-version>
     <velocity-version>1.6.3</velocity-version>
     <antlr3-version>3.5.2</antlr3-version>
@@ -31,19 +31,12 @@
     <developer>
       <id>dyu</id>
       <name>David Yu</name>
-      <email>david.yu.ftw@gmail.com</email>
-      <url>http://davidyu.myopenid.com</url>
-    </developer>
-    <developer>
-      <id>posix4e</id>
-      <name>Alex Newman</name>
-      <email>alex@ohmdata.com</email>
-      <url>http://www.ohmdata.com</url>
+      <email>dyu@protostuff.io</email>
     </developer>
     <developer>
       <id>kshchepanovskyi</id>
       <name>Kostiantyn Shchepanovskyi</name>
-      <email>schepanovsky@gmail.com</email>
+      <email>ks@protostuff.io</email>
       <timezone>+2</timezone>
     </developer>
   </developers>

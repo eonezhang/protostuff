@@ -67,7 +67,7 @@ final class RuntimeMapFieldFactory
     private static <T> Field<T> createMapInlineKEnumV(int number, String name,
             final java.lang.reflect.Field f, MessageFactory messageFactory,
             final Delegate<Object> inlineK, final Class<Object> clazzV,
-            IdStrategy strategy)
+            final IdStrategy strategy)
     {
         final EnumIO<?> eioV = strategy.getEnumIO(clazzV);
 
@@ -158,7 +158,7 @@ final class RuntimeMapFieldFactory
             protected void vTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
         };
     }
@@ -596,7 +596,7 @@ final class RuntimeMapFieldFactory
     private static <T> Field<T> createMapEnumKEnumV(int number, String name,
             final java.lang.reflect.Field f, MessageFactory messageFactory,
             final Class<Object> clazzK, final Class<Object> clazzV,
-            IdStrategy strategy)
+            final IdStrategy strategy)
     {
         final EnumIO<?> eioK = strategy.getEnumIO(clazzK);
         final EnumIO<?> eioV = strategy.getEnumIO(clazzV);
@@ -666,7 +666,7 @@ final class RuntimeMapFieldFactory
             protected void kTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
 
             @Override
@@ -688,7 +688,7 @@ final class RuntimeMapFieldFactory
             protected void vTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
         };
     }
@@ -696,7 +696,7 @@ final class RuntimeMapFieldFactory
     private static <T> Field<T> createMapEnumKInlineV(int number, String name,
             final java.lang.reflect.Field f, MessageFactory messageFactory,
             final Class<Object> clazzK, final Delegate<Object> inlineV,
-            IdStrategy strategy)
+            final IdStrategy strategy)
     {
         final EnumIO<?> eioK = strategy.getEnumIO(clazzK);
 
@@ -765,7 +765,7 @@ final class RuntimeMapFieldFactory
             protected void kTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
 
             @Override
@@ -795,7 +795,7 @@ final class RuntimeMapFieldFactory
     private static <T> Field<T> createMapEnumKPojoV(int number, String name,
             final java.lang.reflect.Field f, MessageFactory messageFactory,
             final Class<Object> clazzK, final Class<Object> clazzV,
-            IdStrategy strategy)
+            final IdStrategy strategy)
     {
         final EnumIO<?> eioK = strategy.getEnumIO(clazzK);
         final HasSchema<Object> schemaV = strategy.getSchemaWrapper(clazzV,
@@ -866,7 +866,7 @@ final class RuntimeMapFieldFactory
             protected void kTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
 
             @Override
@@ -968,7 +968,7 @@ final class RuntimeMapFieldFactory
             protected void kTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
 
             @Override
@@ -1087,7 +1087,7 @@ final class RuntimeMapFieldFactory
             protected void kTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
 
             @Override
@@ -1132,7 +1132,7 @@ final class RuntimeMapFieldFactory
     private static <T> Field<T> createMapPojoKEnumV(int number, String name,
             final java.lang.reflect.Field f, MessageFactory messageFactory,
             final Class<Object> clazzK, final Class<Object> clazzV,
-            IdStrategy strategy)
+            final IdStrategy strategy)
     {
         final HasSchema<Object> schemaK = strategy.getSchemaWrapper(clazzK,
                 true);
@@ -1227,7 +1227,7 @@ final class RuntimeMapFieldFactory
             protected void vTransfer(Pipe pipe, Input input, Output output,
                     int number, boolean repeated) throws IOException
             {
-                EnumIO.transfer(pipe, input, output, number, repeated);
+                EnumIO.transfer(pipe, input, output, number, repeated, strategy);
             }
         };
     }
@@ -1814,6 +1814,20 @@ final class RuntimeMapFieldFactory
                 final java.lang.reflect.Field f, IdStrategy strategy)
         {
             final Class<?> clazz = f.getType();
+            final Morph morph = f.getAnnotation(Morph.class);
+            
+            if (0 != (IdStrategy.POJO_SCHEMA_ON_MAP_FIELDS & strategy.flags) && 
+                    (morph == null || morph.value()))
+            {
+                if (!clazz.getName().startsWith("java.util") && 
+                        pojo(clazz, morph, strategy))
+                {
+                    return POJO.create(number, name, f, strategy);
+                }
+                
+                return OBJECT.create(number, name, f, strategy);
+            }
+            
             if (Modifier.isAbstract(clazz.getModifiers()))
             {
                 if (!clazz.isInterface())
@@ -1822,10 +1836,9 @@ final class RuntimeMapFieldFactory
                     return OBJECT.create(number, name, f, strategy);
                 }
 
-                final Morph morph = f.getAnnotation(Morph.class);
                 if (morph == null)
                 {
-                    if (RuntimeEnv.MORPH_MAP_INTERFACES)
+                    if (0 != (IdStrategy.MORPH_MAP_INTERFACES & strategy.flags))
                         return OBJECT.create(number, name, f, strategy);
                 }
                 else if (morph.value())
@@ -1906,7 +1919,7 @@ final class RuntimeMapFieldFactory
                             strategy.OBJECT_ELEMENT_SCHEMA.pipeSchema, strategy);
                 }
 
-                if (pojo(clazzK, f.getAnnotation(Morph.class), strategy))
+                if (pojo(clazzK, morph, strategy))
                 {
                     return createMapPojoKObjectV(number, name, f,
                             messageFactory, clazzK,

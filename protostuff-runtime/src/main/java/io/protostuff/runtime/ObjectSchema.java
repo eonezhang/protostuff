@@ -658,7 +658,7 @@ public abstract class ObjectSchema extends PolymorphicSchema
                 final int arrayId = input.readUInt32(), id = ArraySchemas.toInlineId(arrayId);
 
                 final ArraySchemas.Base arraySchema = ArraySchemas.getSchema(id,
-                        ArraySchemas.isPrimitive(arrayId));
+                        ArraySchemas.isPrimitive(arrayId), strategy);
 
                 return arraySchema.readFrom(input, owner);
             }
@@ -746,7 +746,22 @@ public abstract class ObjectSchema extends PolymorphicSchema
             schema.writeTo(output, value);
             return;
         }
+        
+        HasSchema<Object> hs = strategy.tryWritePojoIdTo(output, ID_POJO, clazz, false);
+        if (hs != null)
+        {
+            final Schema<Object> schema = hs.getSchema();
+            
+            if (output instanceof StatefulOutput)
+            {
+                // update using the derived schema.
+                ((StatefulOutput) output).updateLast(schema, currentSchema);
+            }
 
+            schema.writeTo(output, value);
+            return;
+        }
+        
         if (clazz.isEnum())
         {
             EnumIO<?> eio = strategy.getEnumIO(clazz);
@@ -790,7 +805,7 @@ public abstract class ObjectSchema extends PolymorphicSchema
                 // scalar
                 final boolean primitive = componentType.isPrimitive();
                 final ArraySchemas.Base arraySchema = ArraySchemas.getSchema(
-                        inlineArray.id, primitive);
+                        inlineArray.id, primitive, strategy);
 
                 output.writeUInt32(ID_ARRAY_SCALAR,
                         ArraySchemas.toArrayId(inlineArray.id, primitive),
@@ -828,7 +843,7 @@ public abstract class ObjectSchema extends PolymorphicSchema
                     strategy.isRegistered(componentType))
             {
                 // messsage / registered pojo
-                final HasSchema<Object> hs = strategy.writePojoIdTo(output,
+                hs = strategy.writePojoIdTo(output,
                         ID_ARRAY_POJO, (Class<Object>) componentType);
 
                 if (output instanceof StatefulOutput)
@@ -1077,7 +1092,7 @@ public abstract class ObjectSchema extends PolymorphicSchema
 
                 if (input.readFieldNumber(pipeSchema.wrappedSchema) != ID_ENUM_VALUE)
                     throw new ProtostuffException("Corrupt input.");
-                EnumIO.transfer(pipe, input, output, 1, false);
+                EnumIO.transfer(pipe, input, output, 1, false, strategy);
                 break;
             }
 
@@ -1207,7 +1222,7 @@ public abstract class ObjectSchema extends PolymorphicSchema
                 final int arrayId = input.readUInt32(), id = ArraySchemas.toInlineId(arrayId);
 
                 final ArraySchemas.Base arraySchema = ArraySchemas.getSchema(id,
-                        ArraySchemas.isPrimitive(arrayId));
+                        ArraySchemas.isPrimitive(arrayId), strategy);
 
                 output.writeUInt32(number, arrayId, false);
 
